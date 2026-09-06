@@ -1,0 +1,67 @@
+# Build + ejecución local. Ver docs/PRUEBAS-LOCALES.md.
+#   cp .env.example .env   # y editar secretos
+#   docker compose -f compose.local.yaml --env-file .env up -d --build
+#
+# El healthcheck usado es el definido en el Dockerfile (HEALTHCHECK) — no se
+# repite aquí a propósito, para no tener dos definiciones que puedan divergir.
+
+services:
+  prep:
+    build:
+      context: ..
+      dockerfile: deployment-prep-2027/Dockerfile
+      platforms:
+        - linux/amd64
+      args:
+        APP_VERSION: ${APP_VERSION:-0.0.1-local}
+        GIT_COMMIT_BACKEND: ${GIT_COMMIT_BACKEND:-unknown}
+        GIT_COMMIT_FRONTEND: ${GIT_COMMIT_FRONTEND:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    image: prep-2027:local
+    platform: linux/amd64
+    container_name: prep-2027-local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      API_PREFIX: api/v1
+      DB_STORAGE: /app/data/database.db3
+      CONTROL_DB_STORAGE: /app/data/control.db3
+      DB_LOGGING: "false"
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET en .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      CORTES_MANIFEST_HMAC_SECRET: ${CORTES_MANIFEST_HMAC_SECRET:?falta CORTES_MANIFEST_HMAC_SECRET en .env}
+      CORTES_MAX_UPLOAD_MB: ${CORTES_MAX_UPLOAD_MB:-100}
+      CORTES_UPLOAD_RATE_LIMIT: ${CORTES_UPLOAD_RATE_LIMIT:-5}
+      SWAGGER_TITLE: PREP API
+      SWAGGER_DESCRIPTION: API para PREP (Resultados Preliminares) del IECM — entorno local
+      SWAGGER_VERSION: ${APP_VERSION:-0.0.1-local}
+      SWAGGER_PATH: docs
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # APP_VERSION/GIT_COMMIT_BACKEND/GIT_COMMIT_FRONTEND/BUILD_DATE NO se
+      # redeclaran aquí a propósito: ya quedan horneados en la imagen como
+      # ENV (Dockerfile, desde los build args). Repetirlos aquí los
+      # sobreescribiría en runtime con lo que haya en .env (por defecto
+      # "unknown"), pisando el valor real del build.
+    volumes:
+      - prep-data:/app/data
+      - prep-logs:/app/logs
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
+
+volumes:
+  prep-data:
+  prep-logs:

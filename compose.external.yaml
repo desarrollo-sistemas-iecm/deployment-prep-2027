@@ -1,0 +1,55 @@
+# Para difusores externos: usa una imagen YA CARGADA (docker load), no
+# construye código. Ver docs/OPERACION-DIFUSOR-EXTERNO.md.
+#
+#   docker load --input prep-2027_<version>_linux-amd64.tar
+#   docker compose --env-file .env -f compose.external.yaml up -d
+#   docker compose -f compose.external.yaml ps
+#
+# Rutas de datos en el host (por defecto /opt/prep/*, configurables por env):
+#   PREP_DATA_DIR    -> /app/data   (SQLite vivo + control + staging + archive)
+#   PREP_LOGS_DIR    -> /app/logs
+#   PREP_KEYS_DIR    -> reservado para uso futuro (TLS/asimétrico); no lo usa
+#                        el contrato de cortes actual (HMAC compartido por env).
+
+services:
+  prep:
+    image: ${PREP_IMAGE:?especifica PREP_IMAGE, p. ej. prep-2027:0.1.0}
+    platform: linux/amd64
+    container_name: prep-2027
+    restart: unless-stopped
+    init: true
+    read_only: true
+    ports:
+      - "127.0.0.1:${PREP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      API_PREFIX: api/v1
+      DB_STORAGE: /app/data/database.db3
+      CONTROL_DB_STORAGE: /app/data/control.db3
+      DB_LOGGING: "false"
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET en .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      CORTES_MANIFEST_HMAC_SECRET: ${CORTES_MANIFEST_HMAC_SECRET:?falta CORTES_MANIFEST_HMAC_SECRET en .env}
+      CORTES_MAX_UPLOAD_MB: ${CORTES_MAX_UPLOAD_MB:-100}
+      CORTES_UPLOAD_RATE_LIMIT: ${CORTES_UPLOAD_RATE_LIMIT:-5}
+      SWAGGER_TITLE: PREP API
+      SWAGGER_DESCRIPTION: API para PREP (Resultados Preliminares) del IECM
+      SWAGGER_VERSION: ${APP_VERSION:-unknown}
+      SWAGGER_PATH: docs
+      CORS_ORIGINS: ${CORS_ORIGINS:?falta CORS_ORIGINS en .env}
+      APP_VERSION: ${APP_VERSION:-unknown}
+    volumes:
+      - ${PREP_DATA_DIR:-/opt/prep/data}:/app/data
+      - ${PREP_LOGS_DIR:-/opt/prep/logs}:/app/logs
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g

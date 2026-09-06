@@ -1,0 +1,70 @@
+# Ejemplo de proxy inverso Apache HTTP Server 2.4 -> contenedor prep-2027
+# (Node/NestJS escuchando solo en 127.0.0.1:3000, nunca expuesto directamente).
+#
+# Módulos requeridos (habilitar antes de cargar este vhost):
+#   a2enmod proxy proxy_http headers ssl
+#
+# Reemplazar:
+#   TU_DOMINIO.example           -> dominio real del difusor
+#   /ruta/a/fullchain.pem        -> certificado real (Let's Encrypt u otro)
+#   /ruta/a/privkey.pem          -> llave privada real del certificado TLS
+#     (placeholders — NUNCA commitear certificados/llaves reales)
+
+<VirtualHost *:80>
+    ServerName TU_DOMINIO.example
+
+    # Redirige todo HTTP a HTTPS
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}$1 [R=301,L]
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName TU_DOMINIO.example
+
+    SSLEngine on
+    SSLCertificateFile      /ruta/a/fullchain.pem
+    SSLCertificateKeyFile   /ruta/a/privkey.pem
+    SSLProtocol             all -SSLv3 -TLSv1 -TLSv1.1
+    SSLCipherSuite          HIGH:!aNULL:!MD5
+
+    # --- Límite de tamaño de subida ---
+    # Debe ser mayor a CORTES_MAX_UPLOAD_MB (100 MB por defecto) más el
+    # overhead del multipart (manifest + boundary). 120 MB da margen.
+    LimitRequestBody 125829120
+
+    # --- Timeouts razonables para la carga de un corte SQLite grande ---
+    ProxyTimeout 120
+    TimeOut 120
+
+    # --- No exponer el puerto 3000 directamente: todo pasa por este proxy ---
+    ProxyPreserveHost On
+    ProxyRequests Off
+
+    <Proxy *>
+        Require all granted
+    </Proxy>
+
+    # Preserva Host, X-Forwarded-For, X-Forwarded-Proto, X-Real-IP.
+    # mod_proxy_http agrega X-Forwarded-For y X-Forwarded-Host
+    # automáticamente; los siguientes headers cubren lo que falta.
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Real-IP "%{REMOTE_ADDR}s"
+
+    ProxyPass        / http://127.0.0.1:3000/ retry=0
+    ProxyPassReverse / http://127.0.0.1:3000/
+
+    ErrorLog  ${APACHE_LOG_DIR}/prep-2027-error.log
+    CustomLog ${APACHE_LOG_DIR}/prep-2027-access.log combined
+</VirtualHost>
+
+# --- NestJS: "trust proxy" ---
+# Como todo el tráfico real llega vía Apache en el mismo host (127.0.0.1),
+# services-prep-2027 debe confiar SOLO en loopback para no permitir que un
+# cliente falsifique X-Forwarded-For/X-Real-IP y evada el rate limiting por
+# IP de @nestjs/throttler. Agregar en src/main.ts (NestExpressApplication):
+#
+#   app.set('trust proxy', 'loopback');
+#
+# Esto NO se agregó en este cambio (fuera del alcance de "documentar cómo
+# configurarlo"); aplicar antes de operar detrás de este Apache en producción.

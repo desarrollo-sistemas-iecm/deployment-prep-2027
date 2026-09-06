@@ -1,0 +1,71 @@
+# Ignore file específico para deployment-prep-2027/Dockerfile (BuildKit busca
+# "<Dockerfile>.dockerignore" junto al Dockerfile antes que el ".dockerignore"
+# de la raíz del contexto). El contexto de build es la raíz `PREP/`.
+#
+# Se excluye explícitamente lo pesado/sensible/regenerable de los dos
+# proyectos que el Dockerfile sí usa (publicador-prep-2027,
+# services-prep-2027), y todo lo demás del monorepo que el build no toca.
+
+# --- Proyectos que el Dockerfile no usa ---
+extractor/
+static-site/
+deployment-prep-2027/**
+!deployment-prep-2027/Dockerfile
+
+# --- Pesado / regenerable en ambos proyectos ---
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.angular/
+**/.angular/
+coverage/
+**/coverage/
+*.log
+**/*.log
+
+.git/
+**/.git/
+.gitignore
+**/.gitignore
+
+# --- Bases SQLite locales (nunca deben entrar a la imagen) ---
+*.db3
+*.db3-wal
+*.db3-shm
+**/*.db3
+**/*.db3-wal
+**/*.db3-shm
+data/
+**/data/
+
+# --- Secretos y configuración de entorno real ---
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# --- Llaves, certificados ---
+credentials/
+**/credentials/
+*.pem
+*.key
+*.crt
+**/*.pem
+**/*.key
+**/*.crt
+
+# --- Build de Angular pegado a mano dentro de services-prep-2027/public ---
+# (se regenera en la etapa frontend-build; no debe copiarse el que ya exista
+# en disco del desarrollador)
+services-prep-2027/public/
+
+# --- macOS / editores ---
+.DS_Store
+**/.DS_Store
+.vscode/
+**/.vscode/
+.idea/
+**/.idea/
