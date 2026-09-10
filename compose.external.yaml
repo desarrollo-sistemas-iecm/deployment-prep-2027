@@ -34,7 +34,7 @@ services:
       CORTES_MAX_UPLOAD_MB: ${CORTES_MAX_UPLOAD_MB:-100}
       CORTES_UPLOAD_RATE_LIMIT: ${CORTES_UPLOAD_RATE_LIMIT:-5}
       SWAGGER_TITLE: PREP API
-      SWAGGER_DESCRIPTION: API para PREP (Resultados Preliminares) del IECM
+      SWAGGER_DESCRIPTION: API para Programa de Resultados Electorales Preliminares (PREP) del IECM
       SWAGGER_VERSION: ${APP_VERSION:-unknown}
       SWAGGER_PATH: docs
       CORS_ORIGINS: ${CORS_ORIGINS:?falta CORS_ORIGINS en .env}
