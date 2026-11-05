@@ -24,7 +24,7 @@ services:
     init: true
     read_only: true
     ports:
-      - "127.0.0.1:3000:3000"
+      - "0.0.0.0:3009:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
