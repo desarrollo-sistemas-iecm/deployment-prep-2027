@@ -65,6 +65,7 @@ release/                      # salida de package-release.sh (gitignored)
 - [`docs/OPERACION-DIFUSOR-EXTERNO.md`](docs/OPERACION-DIFUSOR-EXTERNO.md) — instalación, rollback y
   verificación en un servidor de difusor externo.
 - [`docs/CI-CD.md`](docs/CI-CD.md) — pipeline de GitHub Actions (GHCR, App Service, runners RHEL) y su configuración.
+- [`docs/GITHUB-APP-CI.md`](docs/GITHUB-APP-CI.md) — creación y mantenimiento de la GitHub App que usa el pipeline.
 - [`docs/AZURE-READINESS.md`](docs/AZURE-READINESS.md) — qué ya cumple la imagen para Azure App Service y qué
   falta cuando existan recursos de Azure.
 - [`docs/PRUEBAS-LOCALES.md`](docs/PRUEBAS-LOCALES.md) — evidencia real de las pruebas ejecutadas (build,

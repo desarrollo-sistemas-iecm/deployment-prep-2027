@@ -22,7 +22,7 @@ Los tres destinos reciben **el mismo digest**. Los secretos de la aplicación vi
 ## 1. GitHub App (checkout entre repos + repository_dispatch)
 
 `GITHUB_TOKEN` no puede leer otros repos privados ni disparar workflows en otro repo; se usa una
-GitHub App de la organización (no un PAT personal).
+GitHub App de la organización (no un PAT personal). Guía detallada: [`GITHUB-APP-CI.md`](GITHUB-APP-CI.md).
 
 1. Organización → Settings → Developer settings → GitHub Apps → **New GitHub App**
    - Nombre: `prep-2027-ci` · Webhook: desactivado
