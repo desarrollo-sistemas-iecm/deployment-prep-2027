@@ -38,7 +38,6 @@ services:
       SWAGGER_VERSION: ${APP_VERSION:-unknown}
       SWAGGER_PATH: docs
       CORS_ORIGINS: ${CORS_ORIGINS:?falta CORS_ORIGINS en .env}
-      APP_VERSION: ${APP_VERSION:-unknown}
     volumes:
       - ${PREP_DATA_DIR:-/opt/prep/data}:/app/data
       - ${PREP_LOGS_DIR:-/opt/prep/logs}:/app/logs
