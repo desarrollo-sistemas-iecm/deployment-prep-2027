@@ -115,7 +115,9 @@ GitHub; no se expone SSH ni el puerto 3000 a internet.
 - `/opt/prep/{data,logs,keys}` propiedad de la cuenta, con contexto SELinux `container_file_t`.
 - Docker Engine + Compose plugin y `git`; salida a `github.com`, `api.github.com`,
   `*.actions.githubusercontent.com`, `ghcr.io` y `pkg-containers.githubusercontent.com`.
-- Nginx como proxy TLS (80/443) hacia `127.0.0.1:3000`; firewalld solo con 22/80/443.
+- Nginx como proxy TLS (80/443) hacia `127.0.0.1:3000` según [`nginx/prep.conf.example`](../nginx/prep.conf.example),
+  con `client_max_body_size 110m;` (el default de 1 MB rechaza los cortes con 413 sin que lleguen a
+  la app); firewalld solo con 22/80/443.
 
 ### Como la cuenta de servicio (sin sudo)
 
@@ -158,6 +160,8 @@ Si existe el secret `RELEASE_SIGNING_SECRET` en el repo, cada run también gener
 `scripts/package-release.sh` y lo sube como artifact (30 días).
 
 ## 6. Al pasar a producción
+
+Lista completa, ordenada y con verificaciones: [`PRODUCCION-CHECKLIST.md`](PRODUCCION-CHECKLIST.md). En resumen:
 
 - Crear environments `prod-*` con **required reviewers** (aprobación manual) y promover el digest ya
   probado en dev, sin reconstruir.

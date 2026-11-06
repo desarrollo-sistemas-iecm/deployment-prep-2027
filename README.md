@@ -49,6 +49,7 @@ Dockerfile                    # imagen única, 3 etapas (frontend, backend, runt
 compose.local.yaml            # build + ejecución local
 compose.external.yaml         # ejecución de una imagen ya empaquetada (difusor externo)
 apache/prep.conf.example      # proxy inverso opcional (TLS)
+nginx/prep.conf.example       # proxy inverso Nginx (TLS, límite de subida para cortes)
 scripts/                      # build, start/stop, empaquetado, instalación, rollback, smoke test
 docs/                         # documentación detallada (ver abajo)
 runtime/                      # placeholders de datos/logs/keys/releases (gitignored salvo .gitkeep)
@@ -66,6 +67,8 @@ release/                      # salida de package-release.sh (gitignored)
   verificación en un servidor de difusor externo.
 - [`docs/CI-CD.md`](docs/CI-CD.md) — pipeline de GitHub Actions (GHCR, App Service, runners RHEL) y su configuración.
 - [`docs/GITHUB-APP-CI.md`](docs/GITHUB-APP-CI.md) — creación y mantenimiento de la GitHub App que usa el pipeline.
+- [`docs/PRODUCCION-CHECKLIST.md`](docs/PRODUCCION-CHECKLIST.md) — checklist completo para recibir y poner en marcha
+  los ambientes de producción (solicitudes a Infraestructura, configuración, validación, lecciones de dev).
 - [`docs/AZURE-READINESS.md`](docs/AZURE-READINESS.md) — qué ya cumple la imagen para Azure App Service y qué
   falta cuando existan recursos de Azure.
 - [`docs/PRUEBAS-LOCALES.md`](docs/PRUEBAS-LOCALES.md) — evidencia real de las pruebas ejecutadas (build,
@@ -75,7 +78,7 @@ release/                      # salida de package-release.sh (gitignored)
 
 - El endpoint de cortes asume una sola instancia del contenedor (SQLite de un solo escritor) — no apto para
   escalado horizontal sin rediseñar la persistencia. En App Service: 1 instancia, sin autoescalado.
-- SQLite sobre el almacenamiento `/home` de App Service (SMB) aún requiere una prueba real con un corte
-  (ver `docs/CI-CD.md`).
+- SQLite sobre `/home` de App Service (SMB) validado con cortes reales en dev; falta la prueba de reinicio
+  con corte activo (ver `docs/PRODUCCION-CHECKLIST.md` §7).
 
 Para las convenciones de trabajo con Claude Code en este repositorio, ver [`CLAUDE.md`](CLAUDE.md).

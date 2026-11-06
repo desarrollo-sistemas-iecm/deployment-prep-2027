@@ -61,7 +61,10 @@ de SQLite en cada corte.
 - **Apache HTTP Server (`httpd` en RHEL, `apache2` en Ubuntu/Debian) o Nginx**, como proxy inverso
   con TLS. Ya tenemos un ejemplo de configuración probado para Apache
   (`deployment-prep-2027/apache/prep.conf.example`) — si el estándar de Infraestructura es Nginx,
-  podemos adaptarlo (misma idea: terminar TLS ahí, reenviar a `127.0.0.1:3000`).
+  podemos adaptarlo (misma idea: terminar TLS ahí, reenviar a `127.0.0.1:3000`). Plantilla Nginx:
+  `deployment-prep-2027/nginx/prep.conf.example`. En cualquiera de los dos, el límite de cuerpo debe
+  ser de al menos 110 MB (`client_max_body_size 110m;` en Nginx, `LimitRequestBody` en Apache): con el
+  default de Nginx (1 MB) los cortes se rechazan con **413**.
 - Certificado TLS para el dominio que se asigne (Let's Encrypt o el CA interno del IECM).
 - Nada más — el runtime de Node.js/NestJS/Angular vive **dentro** de la imagen Docker; el host no
   necesita Node, pnpm, npm ni ninguna dependencia de la aplicación instalada directamente.
@@ -89,6 +92,12 @@ ninguno de estos son ajustes que Infraestructura deba hacer, ya vienen así en l
   Infraestructura al crear la carpeta, o lo hacemos nosotros si nos dan el acceso `sudo` puntual.
 - **AppArmor (Debian)**: no requiere ajustes adicionales, es compatible con la configuración del
   contenedor tal cual.
+- **Cuenta de servicio** con **uid 1000** (igual al usuario `node` del contenedor), en el grupo
+  `docker`, dueña de `/opt/prep`, y con linger habilitado (`loginctl enable-linger <cuenta>`) para que
+  el runner de GitHub Actions siga activo sin sesión abierta y tras reinicios.
+- **Salida HTTPS** a `github.com`, `api.github.com`, `*.actions.githubusercontent.com`,
+  `codeload.github.com`, `ghcr.io` y `pkg-containers.githubusercontent.com` (runner y descarga de la imagen).
+- Lectura de `/var/log/nginx/` para la cuenta de servicio (diagnóstico).
 - Carpetas de datos en el host, por ejemplo `/opt/prep/{data,logs,keys}` — deben persistir entre
   despliegues (ahí vive la base SQLite de resultados activa y su archivo histórico). Si hay política
   de backup de disco por convención de Infraestructura, esta carpeta debería incluirse.
@@ -233,6 +242,8 @@ proxy y el propio frontend Angular:
   del contenedor en un servidor externo.
 - `deployment-prep-2027/apache/prep.conf.example` — plantilla de proxy inverso Apache con TLS,
   probada.
+- `deployment-prep-2027/nginx/prep.conf.example` — plantilla de proxy inverso Nginx con TLS.
+- `deployment-prep-2027/docs/PRODUCCION-CHECKLIST.md` — pasos completos para entregar producción.
 - `deployment-prep-2027/compose.external.yaml` — definición exacta de puertos/volúmenes/límites del
   contenedor en un servidor de despliegue.
 - `extractor/backend-extractor-prep-2026/CLAUDE.md` — arquitectura del microservicio Extractor.
