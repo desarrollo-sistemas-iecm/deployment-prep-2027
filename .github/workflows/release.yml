@@ -136,6 +136,7 @@ jobs:
             -e DB_STORAGE=/app/data/database.db3 \
             -e CONTROL_DB_STORAGE=/app/data/control.db3 \
             -e JWT_SECRET=ci-smoke-test-secret-no-usar \
+            -e JWT_EXPIRES_IN=1h \
             -e CORTES_MANIFEST_HMAC_SECRET=ci-smoke-test-hmac-no-usar \
             -e CORS_ORIGINS=http://localhost:3000 \
             -e SWAGGER_TITLE="PREP API" -e SWAGGER_PATH=docs \
