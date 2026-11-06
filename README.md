@@ -53,7 +53,7 @@ scripts/                      # build, start/stop, empaquetado, instalación, ro
 docs/                         # documentación detallada (ver abajo)
 runtime/                      # placeholders de datos/logs/keys/releases (gitignored salvo .gitkeep)
 release/                      # salida de package-release.sh (gitignored)
-.github/workflows/            # CI: build, test, empaquetado (no despliega a Azure)
+.github/workflows/release.yml  # CI/CD: build, smoke test, GHCR, App Service y RHEL
 ```
 
 ## Documentación
@@ -64,6 +64,8 @@ release/                      # salida de package-release.sh (gitignored)
   (autenticación, firma HMAC del manifest, validación y activación).
 - [`docs/OPERACION-DIFUSOR-EXTERNO.md`](docs/OPERACION-DIFUSOR-EXTERNO.md) — instalación, rollback y
   verificación en un servidor de difusor externo.
+- [`docs/CI-CD.md`](docs/CI-CD.md) — pipeline de GitHub Actions (GHCR, App Service, runners RHEL) y su configuración.
+- [`docs/GITHUB-APP-CI.md`](docs/GITHUB-APP-CI.md) — creación y mantenimiento de la GitHub App que usa el pipeline.
 - [`docs/AZURE-READINESS.md`](docs/AZURE-READINESS.md) — qué ya cumple la imagen para Azure App Service y qué
   falta cuando existan recursos de Azure.
 - [`docs/PRUEBAS-LOCALES.md`](docs/PRUEBAS-LOCALES.md) — evidencia real de las pruebas ejecutadas (build,
@@ -71,13 +73,9 @@ release/                      # salida de package-release.sh (gitignored)
 
 ## Limitaciones conocidas
 
-- El frontend corre con `useMockApi: true` a propósito: `services-prep-2027` aún no implementa los
-  endpoints de resultados (`/avance`, `/grafica`, `/combos/*`, etc.), solo `/cortes`, `/health` y `/version`.
 - El endpoint de cortes asume una sola instancia del contenedor (SQLite de un solo escritor) — no apto para
-  escalado horizontal sin rediseñar la persistencia.
-- No hay recursos de Azure creados todavía; el job `publish-to-acr` del workflow y los pasos de
-  Trivy/SBOM están deshabilitados (`if: false`) hasta completar esos requisitos.
-- El workflow de GitHub Actions vive en esta carpeta pero no puede ejecutarse de verdad hasta alojarse en la
-  raíz de un repositorio git real (ver sección correspondiente en `IMPLEMENTACION-DOCKER.md`).
+  escalado horizontal sin rediseñar la persistencia. En App Service: 1 instancia, sin autoescalado.
+- SQLite sobre el almacenamiento `/home` de App Service (SMB) aún requiere una prueba real con un corte
+  (ver `docs/CI-CD.md`).
 
 Para las convenciones de trabajo con Claude Code en este repositorio, ver [`CLAUDE.md`](CLAUDE.md).

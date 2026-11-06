@@ -1,0 +1,307 @@
+# CI/CD de PREP 2027 (ambiente dev, operado como producción).
+#
+# Disparadores:
+#   - push a main de este repo
+#   - repository_dispatch "source-updated" desde services-prep-2027 / publicador-prep-2027
+#     (workflow notify-deployment.yml en cada uno, en su push a main)
+#   - manual (workflow_dispatch)
+#
+# Flujo: build único -> smoke test -> push a GHCR -> despliegue del MISMO digest a
+# Azure App Service y a los servidores RHEL (runners self-hosted).
+#
+# Configuración requerida: ver docs/CI-CD.md.
+
+name: release
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [source-updated]
+  workflow_dispatch:
+
+concurrency:
+  group: release-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ORG: desarrollo-sistemas-iecm
+  IMAGE_NAME: ghcr.io/desarrollo-sistemas-iecm/prep-2027
+  NODE_VERSION: "24.15.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_ref: ${{ steps.push.outputs.image_ref }}
+      app_version: ${{ steps.meta.outputs.app_version }}
+    env:
+      HAS_RELEASE_SIGNING_SECRET: ${{ secrets.RELEASE_SIGNING_SECRET != '' }}
+    steps:
+      - name: Token de la GitHub App para los repos de código
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: ${{ env.ORG }}
+          repositories: services-prep-2027,publicador-prep-2027
+
+      - name: Checkout deployment-prep-2027
+        uses: actions/checkout@v4
+        with:
+          path: deployment-prep-2027
+
+      - name: Checkout services-prep-2027 (main)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG }}/services-prep-2027
+          ref: main
+          path: services-prep-2027
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout publicador-prep-2027 (main)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG }}/publicador-prep-2027
+          ref: main
+          path: publicador-prep-2027
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Metadatos del build
+        id: meta
+        run: |
+          backend_sha="$(git -C services-prep-2027 rev-parse --short HEAD)"
+          frontend_sha="$(git -C publicador-prep-2027 rev-parse --short HEAD)"
+          deployment_sha="$(git -C deployment-prep-2027 rev-parse --short HEAD)"
+          {
+            echo "backend_sha=${backend_sha}"
+            echo "frontend_sha=${frontend_sha}"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "app_version=0.1.0-dev.${GITHUB_RUN_NUMBER}"
+            echo "tag=${backend_sha}-${frontend_sha}-${deployment_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: publicador-prep-2027/package-lock.json
+
+      # El Dockerfile ya ejecuta lint + test + build del backend; las pruebas
+      # del frontend (Karma) necesitan Chrome y no corren dentro de la imagen.
+      - name: Frontend — pruebas headless
+        working-directory: publicador-prep-2027
+        run: |
+          npm ci
+          npx ng test --browsers=ChromeHeadless --watch=false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build de la imagen (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment-prep-2027/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:dev
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.app_version }}
+            GIT_COMMIT_BACKEND=${{ steps.meta.outputs.backend_sha }}
+            GIT_COMMIT_FRONTEND=${{ steps.meta.outputs.frontend_sha }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test del contenedor
+        env:
+          IMAGE: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+        run: |
+          docker run -d --name prep-ci -p 3000:3000 \
+            -e API_PREFIX=api/v1 \
+            -e DB_STORAGE=/app/data/database.db3 \
+            -e CONTROL_DB_STORAGE=/app/data/control.db3 \
+            -e JWT_SECRET=ci-smoke-test-secret-no-usar \
+            -e CORTES_MANIFEST_HMAC_SECRET=ci-smoke-test-hmac-no-usar \
+            -e CORS_ORIGINS=http://localhost:3000 \
+            -e SWAGGER_TITLE="PREP API" -e SWAGGER_PATH=docs \
+            -e SWAGGER_VERSION=${{ steps.meta.outputs.app_version }} \
+            "$IMAGE"
+          for attempt in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/api/v1/health/live >/dev/null; then break; fi
+            sleep 2
+          done
+          status=0
+          BASE_URL=http://127.0.0.1:3000 bash deployment-prep-2027/scripts/smoke-test.sh || status=$?
+          docker logs prep-ci
+          docker rm -f prep-ci
+          exit "$status"
+
+      - name: Login a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push a GHCR
+        id: push
+        run: |
+          docker push "${IMAGE_NAME}:${{ steps.meta.outputs.tag }}"
+          docker push "${IMAGE_NAME}:dev"
+          image_ref="$(docker image inspect "${IMAGE_NAME}:${{ steps.meta.outputs.tag }}" --format '{{index .RepoDigests 0}}')"
+          echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Imagen publicada"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Versión | \`${{ steps.meta.outputs.app_version }}\` |"
+            echo "| Tag | \`${{ steps.meta.outputs.tag }}\` |"
+            echo "| Digest | \`${image_ref}\` |"
+            echo "| Backend | \`${{ steps.meta.outputs.backend_sha }}\` |"
+            echo "| Frontend | \`${{ steps.meta.outputs.frontend_sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Empaquetar release para difusores externos (.tar firmado)
+        if: env.HAS_RELEASE_SIGNING_SECRET == 'true'
+        env:
+          IMAGE_TAG: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+          GIT_COMMIT_BACKEND: ${{ steps.meta.outputs.backend_sha }}
+          GIT_COMMIT_FRONTEND: ${{ steps.meta.outputs.frontend_sha }}
+          BUILD_DATE: ${{ steps.meta.outputs.build_date }}
+          RELEASE_SIGNING_SECRET: ${{ secrets.RELEASE_SIGNING_SECRET }}
+        working-directory: deployment-prep-2027
+        run: bash scripts/package-release.sh
+
+      - name: Conservar release empaquetado
+        if: env.HAS_RELEASE_SIGNING_SECRET == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prep-2027-release-${{ steps.meta.outputs.app_version }}
+          path: deployment-prep-2027/release/**
+          retention-days: 30
+
+  deploy-app-service:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: dev-app-service
+      url: ${{ vars.APP_SERVICE_URL }}
+    steps:
+      - name: Checkout deployment-prep-2027
+        uses: actions/checkout@v4
+
+      - name: Desplegar imagen por digest
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          images: ${{ needs.build.outputs.image_ref }}
+
+      - name: Esperar a que responda la versión nueva
+        env:
+          BASE_URL: ${{ vars.APP_SERVICE_URL }}
+          EXPECTED_VERSION: ${{ needs.build.outputs.app_version }}
+        run: |
+          for attempt in $(seq 1 40); do
+            current="$(curl -sf "${BASE_URL}/api/v1/version" | jq -r '.data.appVersion // empty' || true)"
+            echo "Intento ${attempt}: versión activa '${current:-sin respuesta}'"
+            if [ "$current" = "$EXPECTED_VERSION" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "App Service no llegó a ${EXPECTED_VERSION} en 10 minutos" >&2
+          exit 1
+
+      - name: Smoke test
+        env:
+          BASE_URL: ${{ vars.APP_SERVICE_URL }}
+        run: bash scripts/smoke-test.sh
+
+  deploy-rhel:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [prep-rhel-1]
+    runs-on: [self-hosted, linux, "${{ matrix.server }}"]
+    environment:
+      name: dev-rhel
+    permissions:
+      contents: read
+      packages: read
+    env:
+      COMPOSE_PROJECT: prep-2027
+      PREP_ENV_FILE: /opt/prep/.env
+      PREP_IMAGE: ${{ needs.build.outputs.image_ref }}
+      APP_VERSION: ${{ needs.build.outputs.app_version }}
+    steps:
+      - name: Checkout deployment-prep-2027
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            compose.external.yaml
+            scripts/smoke-test.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Login a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Registrar imagen actual (para rollback)
+        id: previous
+        run: |
+          previous_image="$(docker inspect "${COMPOSE_PROJECT}" --format '{{.Config.Image}}' 2>/dev/null || true)"
+          echo "previous_image=${previous_image}" >> "$GITHUB_OUTPUT"
+          echo "Imagen previa: ${previous_image:-ninguna}"
+
+      - name: Desplegar
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" --env-file "$PREP_ENV_FILE" -f compose.external.yaml pull
+          docker compose -p "$COMPOSE_PROJECT" --env-file "$PREP_ENV_FILE" -f compose.external.yaml up -d --remove-orphans
+
+      - name: Esperar healthcheck y smoke test
+        run: |
+          for attempt in $(seq 1 30); do
+            health="$(docker inspect "${COMPOSE_PROJECT}" --format '{{.State.Health.Status}}')"
+            echo "Intento ${attempt}: ${health}"
+            if [ "$health" = "healthy" ]; then break; fi
+            sleep 5
+          done
+          [ "$health" = "healthy" ] || { docker logs --tail 200 "${COMPOSE_PROJECT}"; exit 1; }
+          port="$(grep -E '^PREP_PORT=' "$PREP_ENV_FILE" | cut -d= -f2 || true)"
+          BASE_URL="http://127.0.0.1:${port:-3000}" bash scripts/smoke-test.sh
+
+      - name: Rollback a la imagen previa
+        if: failure() && steps.previous.outputs.previous_image != ''
+        env:
+          PREP_IMAGE: ${{ steps.previous.outputs.previous_image }}
+        run: |
+          echo "Revirtiendo a ${PREP_IMAGE}"
+          docker compose -p "$COMPOSE_PROJECT" --env-file "$PREP_ENV_FILE" -f compose.external.yaml up -d
+
+      - name: Limpiar imágenes sin uso de más de 7 días
+        if: success()
+        run: docker image prune -af --filter "label=org.opencontainers.image.title=prep-2027" --filter "until=168h"
+
+      - name: Logout de GHCR
+        if: always()
+        run: docker logout ghcr.io
