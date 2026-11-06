@@ -67,9 +67,11 @@ GitHub App de la organización (no un PAT personal). Guía detallada: [`GITHUB-A
 | `CONTROL_DB_STORAGE` | `/home/prep/data/control.db3` |
 | `DB_LOGGING` | `false` |
 | `JWT_SECRET` | ≥16 caracteres, distinto al de RHEL — preferentemente referencia a Key Vault |
+| `JWT_EXPIRES_IN` | `1h` (obligatoria: sin ella el contenedor no arranca) |
 | `CORTES_MANIFEST_HMAC_SECRET` | ≥16 caracteres — preferentemente referencia a Key Vault |
 | `CORS_ORIGINS` | `https://prep2027-ext-dev.iecm.mx` |
 | `SWAGGER_TITLE` / `SWAGGER_PATH` | `PREP API` / `docs` |
+| `SWAGGER_VERSION` | `dev` (obligatoria; solo es la etiqueta de Swagger, la versión real la da `/api/v1/version`) |
 
 No declarar `APP_VERSION`, `GIT_COMMIT_*`, `BUILD_DATE` ni `IMAGE_DIGEST`: vienen grabadas en la imagen.
 
