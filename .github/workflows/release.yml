@@ -238,7 +238,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        server: [prep-rhel-1, prep-rhel-2]
+        server: [prep-rhel-1]
     runs-on: [self-hosted, linux, "${{ matrix.server }}"]
     environment:
       name: dev-rhel

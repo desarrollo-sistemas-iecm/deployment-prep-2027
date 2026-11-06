@@ -11,7 +11,7 @@ release.yml (deployment-prep-2027)
            (lint + test + build del backend dentro del Dockerfile) ─ smoke test
            ─ push a ghcr.io/desarrollo-sistemas-iecm/prep-2027 (tag <backend>-<frontend>-<deployment> y :dev)
    ├─ deploy-app-service ─ azure/webapps-deploy por digest ─ espera /version ─ smoke test
-   └─ deploy-rhel (matriz prep-rhel-1, prep-rhel-2; runners self-hosted)
+   └─ deploy-rhel (matriz [prep-rhel-1]; runner self-hosted en prep2027-int-dev)
            ─ compose pull/up por digest ─ healthcheck ─ smoke test ─ rollback automático si falla
 ```
 
@@ -93,48 +93,54 @@ activación atómica (`rename`) ocurre dentro del mismo filesystem.
 - Variable `AZURE_WEBAPP_NAME` = `app-prep2027-docker-dev`
 - Variable `APP_SERVICE_URL` = `https://prep2027-ext-dev.iecm.mx` (sin `/` final)
 
-## 4. Servidores RHEL (runners self-hosted)
+## 4. Servidor RHEL (runner self-hosted)
 
-El runner solo abre conexiones **salientes** a GitHub; no se expone SSH a internet.
+Servidor actual: `prep2027-int-dev.iecm.mx` (RHEL 9). El runner solo abre conexiones **salientes** a
+GitHub; no se expone SSH ni el puerto 3000 a internet.
 
-En cada servidor (como root o con sudo):
+### Preparación (Infraestructura, una sola vez)
+
+- Cuenta de servicio `prep-int-dev_us` con **uid 1000** (coincide con el usuario `node` del
+  contenedor, así que no hace falta `chown`) y miembro del grupo `docker`.
+- `/opt/prep/{data,logs,keys}` propiedad de la cuenta, con contexto SELinux `container_file_t`.
+- Docker Engine + Compose plugin y `git`; salida a `github.com`, `api.github.com`,
+  `*.actions.githubusercontent.com`, `ghcr.io` y `pkg-containers.githubusercontent.com`.
+- Nginx como proxy TLS (80/443) hacia `127.0.0.1:3000`; firewalld solo con 22/80/443.
+
+### Como la cuenta de servicio (sin sudo)
 
 ```bash
-dnf install -y git
-useradd -m -s /bin/bash github-runner
-usermod -aG docker github-runner
-
-mkdir -p /opt/prep/{data,logs}
-chown -R 1000:1000 /opt/prep/data /opt/prep/logs
-semanage fcontext -a -t container_file_t '/opt/prep/(data|logs)(/.*)?'
-restorecon -Rv /opt/prep
-
 # Secretos de la aplicación (ver .env.example)
-install -m 640 -o root -g github-runner /dev/null /opt/prep/.env
-vi /opt/prep/.env   # JWT_SECRET, CORTES_MANIFEST_HMAC_SECRET, CORS_ORIGINS, PREP_PORT (opcional)
-```
+install -m 600 /dev/null /opt/prep/.env
+vi /opt/prep/.env   # JWT_SECRET, CORTES_MANIFEST_HMAC_SECRET, CORS_ORIGINS, PREP_PORT=3000
 
-Registrar el runner (repo `deployment-prep-2027` → Settings → Actions → Runners → New self-hosted
-runner → Linux x64, copiar el token):
-
-```bash
-su - github-runner
-mkdir actions-runner && cd actions-runner
+# Runner: repo deployment-prep-2027 → Settings → Actions → Runners → New self-hosted runner → Linux x64
+mkdir ~/actions-runner && cd ~/actions-runner
 # descargar y extraer el paquete que indica la página de GitHub
 ./config.sh --url https://github.com/desarrollo-sistemas-iecm/deployment-prep-2027 \
-  --token <TOKEN> --name prep-rhel-1 --labels prep-rhel-1 --unattended
-exit
-cd /home/github-runner/actions-runner
-./bin/installdependencies.sh
-./svc.sh install github-runner && ./svc.sh start
+  --token <TOKEN> --name prep2027-int-dev --labels prep-rhel-1,prep-int-dev --unattended
 ```
 
-En el segundo servidor usar `prep-rhel-2` como `--name` y `--labels`.
+### Servicio
+
+Con sudo: `sudo ./svc.sh install prep-int-dev_us && sudo ./svc.sh start`.
+
+Sin sudo: servicio systemd de usuario (`~/.config/systemd/user/github-runner.service` con
+`ExecStart=%h/actions-runner/run.sh`, `Restart=always`, `KillMode=process`), habilitado con
+`systemctl --user enable --now github-runner`. Requiere `loginctl enable-linger` (en
+`prep2027-int-dev` la propia cuenta pudo ejecutarlo sin sudo); sin linger el runner se detiene al
+cerrar la sesión. Verificar con `loginctl show-user prep-int-dev_us -p Linger` → `Linger=yes`.
+
+Verificar en GitHub → Settings → Actions → Runners: `prep2027-int-dev` en **Idle**.
+
+### Agregar otro servidor
+
+Registrar su runner con una etiqueta nueva (p. ej. `prep-rhel-2`) y agregarla a
+`jobs.deploy-rhel.strategy.matrix.server` en `release.yml`. Una etiqueta en la matriz sin runner
+registrado deja el job en espera indefinida.
 
 Environment de GitHub: crear `dev-rhel` (sin secretos; existe para historial y, en producción,
 aprobaciones).
-
-Apache sigue como proxy TLS hacia `127.0.0.1:${PREP_PORT:-3000}` (`apache/prep.conf.example`).
 
 ## 5. Opcional — paquete `.tar` firmado para difusores externos
 
