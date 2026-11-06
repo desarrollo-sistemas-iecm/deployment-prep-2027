@@ -60,6 +60,9 @@ GitHub App de la organización (no un PAT personal). Guía detallada: [`GITHUB-A
 | Variable | Valor |
 |---|---|
 | `WEBSITES_PORT` | `3000` |
+| `DOCKER_REGISTRY_SERVER_URL` | `https://ghcr.io` |
+| `DOCKER_REGISTRY_SERVER_USERNAME` | cuenta dueña del PAT |
+| `DOCKER_REGISTRY_SERVER_PASSWORD` | el PAT (`ghp_...`), no el nombre del scope — preferentemente referencia a Key Vault |
 | `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` (monta `/home` persistente) |
 | `NODE_ENV` | `production` |
 | `API_PREFIX` | `api/v1` |
@@ -72,6 +75,11 @@ GitHub App de la organización (no un PAT personal). Guía detallada: [`GITHUB-A
 | `CORS_ORIGINS` | `https://prep2027-ext-dev.iecm.mx` |
 | `SWAGGER_TITLE` / `SWAGGER_PATH` | `PREP API` / `docs` |
 | `SWAGGER_VERSION` | `dev` (obligatoria; solo es la etiqueta de Swagger, la versión real la da `/api/v1/version`) |
+
+Las tres `DOCKER_REGISTRY_SERVER_*` son obligatorias aunque el registro ya esté capturado en el Centro
+de implementación: si el sitio se creó en modo "Contenedores" (sidecar), esas credenciales quedan en el
+contenedor `main`, pero `azure/webapps-deploy` cambia el sitio a modo clásico (`DOCKER|imagen`), que solo
+lee estas variables. Sin ellas el pull falla con `ImagePullUnauthorizedFailure`.
 
 No declarar `APP_VERSION`, `GIT_COMMIT_*`, `BUILD_DATE` ni `IMAGE_DIGEST`: vienen grabadas en la imagen.
 
